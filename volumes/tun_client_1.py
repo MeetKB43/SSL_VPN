@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 import os
 os.system("pip install pycryptodome")
-os.system("pip install flask")
 import json
 import fcntl
 import struct
@@ -14,8 +13,6 @@ import random
 import hashlib
 import base64
 from html.parser import HTMLParser
-from flask import Flask, render_template
-
 
 class MyHTMLParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
@@ -116,19 +113,7 @@ while True:
          sock.send(encrypted_packet + b'|iv:' + iv)
 
       if fd is sock:
-         data = b''
-         while True:
-            try:
-               chunk = sock.recv(2048)
-               
-               if not chunk:
-                  # No more data or connection closed
-                  break
-               data += chunk
-            except socket.timeout:
-               # Handle timeout (no data received within the specified time)
-               print("Timeout: No data received.")
-               break
+         data = sock.recv(4096)
          if not data:
             break
          
@@ -140,8 +125,8 @@ while True:
          packet = data["data"]
          packet = base64.b64decode(packet.encode('utf-8'))
          
-         #print(packet)
          hashed_message = hash_message_with_password(packet, client_pass)
          if not hashed_message == data["hash"]:
             break
+         os.write(tun,packet)
          

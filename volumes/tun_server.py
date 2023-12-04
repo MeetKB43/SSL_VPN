@@ -125,46 +125,23 @@ def multi_threaded_client(clientSock,IP):
         AESObj = AESCipher(sk[getattr(local, 'IPaddr', None)])
         for fd in ready:
             if fd is clientSock:
-                data = b''
-                while True:
-                    
-                    try:
-                        # Set a timeout for the recv operation (e.g., 5 seconds)
-                        chunk = clientSock.recv(2048)
-                        if not chunk:
-                        # No more data or connection closed
-                            break
-                        data += chunk
-                    except socket.timeout:
-                        # Handle timeout (no data received within the specified time)
-                        print("Timeout: No data received.")
-                        break
+                data = clientSock.recv(4096)
+                
                 if not data:
                     break
-                
                 data, iv = data.split(b'|iv:',1)
-                
                 decrypted_data = AESObj.decrypt(data, iv)
                 data = json.loads(decrypted_data.decode('utf-8'))
-                
-                if "method" in data and data["method"] == "GET":
-                    # If the method is GET, send the login page
-                    get_login_page(clientSock, AESObj, local)
-                elif "method" in data and data["method"] == "POST":
-                    # If the method is POST, handle the request
-                    handle_post_request(data, AESObj, clientSock, local)
-                else:
-                    # If no method is specified, process the packet as usual
-                    packet = data["data"]
-                    packet = base64.b64decode(packet.encode('utf-8'))
-                    hashed_message = hash_message_with_password(packet, usr_pass[getattr(local, 'IPaddr', None)])
-                    if not hashed_message == data["hash"]:
-                        break
-                    os.write(tun, packet)
+                # If no method is specified, process the packet as usual
+                packet = data["data"]
+                packet = base64.b64decode(packet.encode('utf-8'))
+                hashed_message = hash_message_with_password(packet, usr_pass[getattr(local, 'IPaddr', None)])
+                if not hashed_message == data["hash"]:
+                    break
+                os.write(tun, packet)
             if fd is tun:
                 packet = os.read(tun, 2048)
                 
-
                 # Encrypt the HTML content with AES
                 msg = {
                     "data": base64.b64encode(packet).decode('utf-8'),
