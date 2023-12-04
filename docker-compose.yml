@@ -1,0 +1,126 @@
+version: "3"
+
+services:
+    VPN_Client_1:
+        image: handsonsecurity/seed-ubuntu:large
+        container_name: host-1
+        tty: true
+        cap_add:
+                - ALL
+        devices:
+                - "/dev/net/tun:/dev/net/tun"
+        volumes:
+                - ./volumes:/volumes
+        ports:
+                - 5901:5900
+        networks:
+            net-10.0.2.0:
+                ipv4_address: 10.0.2.4
+        command: bash -c "
+                    tail -f /dev/null 
+                 "
+    
+    VPN_Client_2:
+        image: handsonsecurity/seed-ubuntu:large
+        container_name: host-2
+        tty: true
+        cap_add:
+                - ALL
+        devices:
+                - "/dev/net/tun:/dev/net/tun"
+        volumes:
+                - ./volumes:/volumes
+        networks:
+            net-10.0.2.0:
+                ipv4_address: 10.0.2.3
+        command: bash -c "
+                    tail -f /dev/null
+                 "
+
+    Host1:
+        image: handsonsecurity/seed-ubuntu:large
+        container_name: host-v
+        tty: true
+        cap_add:
+                - ALL
+        networks:
+            net-192.168.60.0:
+                ipv4_address: 192.168.60.102
+        command: bash -c "
+                      ip route del default  &&
+                      ip route add default via 192.168.60.5  &&
+                      /etc/init.d/openbsd-inetd start &&
+                      tail -f /dev/null 
+
+                 "
+                  
+    Host2:
+        image: handsonsecurity/seed-ubuntu:large
+        container_name: host-192.168.60.6
+        tty: true
+        cap_add:
+                - ALL
+        networks:
+            net-192.168.60.0:
+                ipv4_address: 192.168.60.6
+        command: bash -c "
+                      ip route del default  &&
+                      ip route add default via 192.168.60.5  &&
+                      /etc/init.d/openbsd-inetd start &&
+                      tail -f /dev/null
+                 "
+
+    Router:
+        image: handsonsecurity/seed-ubuntu:large
+        container_name: server-router
+        tty: true
+        cap_add:
+                - ALL
+        devices:
+                - "/dev/net/tun:/dev/net/tun"
+        sysctls:
+                - net.ipv4.ip_forward=1
+        volumes:
+                - ./volumes:/volumes
+        networks:
+            net-10.0.2.0:
+                ipv4_address: 10.0.2.5
+            net-192.168.60.0:
+                ipv4_address: 192.168.60.5
+        command: bash -c "
+                      ip route del default  &&
+                      ip route add default via 10.0.2.1 &&
+                      python3 ./volumes/Mysql.py &&d
+                      tail -f /dev/null
+                      
+                 "
+    
+    mysql:
+        restart: always
+        container_name: "mysql"
+        image: mysql:8.0
+        ports:
+            - 3303:3303
+        networks:
+            net-192.168.60.0:
+                ipv4_address: 192.168.60.11
+        environment:
+            - MYSQL_ROOT_PASSWORD=secret
+            - MYSQL_DATABASE=mysql
+            - MYSQL_USER=vpn_server
+            - MYSQL_PASSWORD=vpn_pass
+
+
+networks:
+    net-192.168.60.0:
+        name: private-network
+        ipam:
+            config:
+                - subnet: 192.168.60.0/24 
+
+    net-10.0.2.0:
+        name: public-network
+        ipam:
+            config:
+                - subnet: 10.0.2.0/24
+
