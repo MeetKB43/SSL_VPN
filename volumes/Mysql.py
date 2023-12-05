@@ -10,7 +10,7 @@ passwords = list(lst_pass.items())
 
 #database connectivity
 mydb = mysql.connector.connect(
-   host="192.168.60.11",
+   host="192.168.60.10",
    user="vpn_server",
    password="vpn_pass",
    database="mysql",

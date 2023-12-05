@@ -23,9 +23,15 @@ p = 6668014432879854274079851790721257797144758322315908160396257811764037237817
 server_secret = random.getrandbits(128)
 sk = {}
 usr_pass = {}
+user_credentials ={
+    "Meet":"Meet_234",
+    "Arjun":"1kheni",
+    "Rahul":"rah098"
+}
+
 #database connectivity
 mydb = mysql.connector.connect(
-   host="192.168.60.11",
+   host="192.168.60.10",
    user="vpn_server",
    password="vpn_pass",
    database="mysql",
@@ -52,6 +58,8 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.bind(("0.0.0.0", 3000))
 sock.listen(5) #Listen to incoming TCP requests
 
+connected_clients = []
+
 def string_to_int(s, modulo):
     return int(hashlib.sha256(s.encode()).hexdigest(), 16) % modulo
 def int_to_hex_string(num):
@@ -67,37 +75,6 @@ def hash_message_with_password(message, password, algorithm='sha256'):
     # Return the hashed message as a base64-encoded string
     return base64.b64encode(hashed).decode('utf-8')
 
-
-def get_login_page(clientSock, AESObj, local):
-    # Read the HTML content from the file
-    with open("./volumes/html/login.html", "r") as html_file:
-        html_content = html_file.read()
-
-    # Encrypt the HTML content with AES
-    msg = {
-        "data": base64.b64encode(html_content.encode('utf-8')).decode('utf-8'),
-        "hash": hash_message_with_password(html_content.encode('utf-8'), usr_pass[getattr(local, 'IPaddr', None)])
-    }
-    encrypted_packet, iv = AESObj.encrypt(json.dumps(msg).encode('utf-8'))
-    print("IV: ", iv)
-    # Send both encrypted packet and IV to the client
-    data = encrypted_packet + b'|iv:' + iv
-    clientSock.sendall(data)
-
-def handle_post_request(data, AESObj, clientSock, local):
-    # Check if the packet contains a route (API request)
-    route = data["route"]
-    if route == "login":
-        # Handle login API request
-        response_data = login_route(data, local)
-        msg = {
-            "data": base64.b64encode(json.dumps(response_data).encode('utf-8')).decode('utf-8'),
-            "hash": hash_message_with_password(json.dumps(response_data).encode('utf-8'), usr_pass[getattr(local, 'IPaddr', None)])
-        }
-        encrypted_packet, iv = AESObj.encrypt(json.dumps(msg).encode('utf-8'))
-        print("IV: ", iv)
-        # Send both encrypted packet and IV to the client
-        clientSock.sendall(encrypted_packet + b'|iv:' + iv)
 
 def multi_threaded_client(clientSock,IP):
     #deffie helman key exchange
@@ -116,14 +93,31 @@ def multi_threaded_client(clientSock,IP):
     clientSock.send(data)
     skTemp = pow(client_public, server_secret, p)
     sk[getattr(local, 'IPaddr', None)] = int_to_hex_string(skTemp)
-    print("Shared secret:", sk[getattr(local, 'IPaddr', None)])
-    print("\n")
-    clientSock.settimeout(5)
+    
+
     while True:
         # this will block until at least one interface is ready
-        ready, _, _ = select([clientSock, tun], [], [])
+        ready, _, _ = select([sys.stdin, clientSock, tun], [], [])
         AESObj = AESCipher(sk[getattr(local, 'IPaddr', None)])
         for fd in ready:
+            if fd is sys.stdin:
+                # Read input from the keyboard
+                server_input = input()
+                packet = {
+                    "route":"chat",
+                    "msg":server_input
+                }
+                packet = json.dumps(packet).encode('utf-8')
+                # Encrypt the input message with AES
+                msg = {
+                    "data": base64.b64encode(packet).decode('utf-8'),
+                    "hash": hash_message_with_password(packet, usr_pass[getattr(local, 'IPaddr', None)])
+                }
+                encrypted_packet, iv = AESObj.encrypt(json.dumps(msg).encode('utf-8'))
+
+                # Send both encrypted packet and IV to all connected clients
+                clientSock.sendall(encrypted_packet + b'|iv:' + iv)
+
             if fd is clientSock:
                 data = clientSock.recv(4096)
                 
@@ -138,9 +132,38 @@ def multi_threaded_client(clientSock,IP):
                 hashed_message = hash_message_with_password(packet, usr_pass[getattr(local, 'IPaddr', None)])
                 if not hashed_message == data["hash"]:
                     break
-                os.write(tun, packet)
+                
+                try:
+                    decoded_packet = packet.decode('utf-8')
+                    decoded_packet = json.loads(decoded_packet)
+                    if decoded_packet['route'] == "chat":
+                        print("Msg from ",getattr(local, 'IPaddr', None), ": ", decoded_packet['msg'])
+                    elif decoded_packet['route'] == "login":
+                        reply = False
+                        if decoded_packet['username'] in user_credentials:
+                            if decoded_packet['password'] == user_credentials[decoded_packet['username']]:
+                                reply = True
+                        packet = {
+                            "route":"login",
+                            "msg":reply
+                        }
+                        packet = json.dumps(packet).encode('utf-8')
+                        # Encrypt the input message with AES
+                        msg = {
+                            "data": base64.b64encode(packet).decode('utf-8'),
+                            "hash": hash_message_with_password(packet, usr_pass[getattr(local, 'IPaddr', None)])
+                        }
+                        encrypted_packet, iv = AESObj.encrypt(json.dumps(msg).encode('utf-8'))
+
+                        # Send both encrypted packet and IV to all connected clients
+                        clientSock.sendall(encrypted_packet + b'|iv:' + iv)
+
+                except:
+                    os.write(tun, packet)
+                
+
             if fd is tun:
-                packet = os.read(tun, 2048)
+                packet = os.read(tun, 4096)
                 
                 # Encrypt the HTML content with AES
                 msg = {
@@ -154,5 +177,6 @@ def multi_threaded_client(clientSock,IP):
         
 while True:
     client_sock, addr = sock.accept()
-    print("TCP connection established")
+    print("New TCP connection established: ",addr[0])
+    connected_clients.append(client_sock)
     start_new_thread(multi_threaded_client, (client_sock, addr, ))

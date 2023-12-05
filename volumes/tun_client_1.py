@@ -79,29 +79,83 @@ raw_data = json.loads(data.decode('utf-8'))
 server_public = raw_data["server_public"]
 sk = pow(server_public, client_secret, p)
 sk = int_to_hex_string(sk)
-print("Shared secret:", sk)
-print("\n")
+AESObj = AESCipher(sk)
+authenticated = False
+while not authenticated:
+   username = input("Enter username: ")
+   password = input("Enter password: ")
+   packet = {
+      "route":"login",
+      "username":username,
+      "password":password
+   }
+   packet = json.dumps(packet).encode('utf-8')
+   # Encrypt the input message with AES
+   msg = {
+      "data": base64.b64encode(packet).decode('utf-8'),
+      "hash": hash_message_with_password(packet, client_pass)
+   }
+   encrypted_packet, iv = AESObj.encrypt(json.dumps(msg).encode('utf-8'))
+
+   # Send both encrypted packet and IV to all connected clients
+   sock.sendall(encrypted_packet + b'|iv:' + iv)
+
+   data = sock.recv(4096)
+   if not data:
+      break
+         
+   # Split the received data into encrypted packet and IV
+   encrypted_packet, iv = data.split(b'|iv:',1)
+   decrypted_data = AESObj.decrypt(encrypted_packet, iv)
+
+   data = json.loads(decrypted_data.decode('utf-8'))
+   packet = data["data"]
+   packet = base64.b64decode(packet.encode('utf-8'))
+         
+   hashed_message = hash_message_with_password(packet, client_pass)
+   if not hashed_message == data["hash"]:
+      break
+   try:
+      packet = packet.decode('utf-8')
+      packet = json.loads(packet)
+      if(packet['route'] == 'login'):
+         if(packet['msg']):
+            authenticated = True
+            print("Authentication successful")
+         else:
+            print("Incorrect Username or Password")
+   except:
+      os.write(tun,packet)
 
 
-# @app.route('/')
-# def home():
-#    with open("./volumes/html/login.html", "r") as html_file:
-#       html_form = html_file.read()
-#    return render_template('login.html', form=html_form)
-
-# if __name__ == '__main__':
-#     app.run(debug=True)
 
 
-
+print("Start chat with server:")
 while True:   
    # this will block until at least one interface is ready
-   ready, _, _ = select([sock, tun], [], [])
-   AESObj = AESCipher(sk)
-   sock.settimeout(5)
+   ready, _, _ = select([sys.stdin, sock, tun], [], [])
+   
    for fd in ready:
+      if fd is sys.stdin:
+                # Read input from the keyboard
+                client_input = input()
+                packet = {
+                    "route":"chat",
+                    "msg":client_input
+                }
+                packet = json.dumps(packet).encode('utf-8')
+                # Encrypt the input message with AES
+                msg = {
+                    "data": base64.b64encode(packet).decode('utf-8'),
+                    "hash": hash_message_with_password(packet, client_pass)
+                }
+                encrypted_packet, iv = AESObj.encrypt(json.dumps(msg).encode('utf-8'))
+
+                # Send both encrypted packet and IV to all connected clients
+                sock.sendall(encrypted_packet + b'|iv:' + iv)
+
       if fd is tun:
-         packet = os.read(tun, 2048)
+         packet = os.read(tun, 4096)
          hashed_message = hash_message_with_password(packet, client_pass)
          msg = {
             "data": base64.b64encode(packet).decode('utf-8'),
@@ -110,7 +164,7 @@ while True:
          encrypted_packet, iv = AESObj.encrypt(json.dumps(msg).encode('utf-8'))
 
          # Send encrypted packet and IV separately
-         sock.send(encrypted_packet + b'|iv:' + iv)
+         sock.sendall(encrypted_packet + b'|iv:' + iv)
 
       if fd is sock:
          data = sock.recv(4096)
@@ -120,7 +174,7 @@ while True:
          # Split the received data into encrypted packet and IV
          encrypted_packet, iv = data.split(b'|iv:',1)
          decrypted_data = AESObj.decrypt(encrypted_packet, iv)
-
+         
          data = json.loads(decrypted_data.decode('utf-8'))
          packet = data["data"]
          packet = base64.b64decode(packet.encode('utf-8'))
@@ -128,5 +182,11 @@ while True:
          hashed_message = hash_message_with_password(packet, client_pass)
          if not hashed_message == data["hash"]:
             break
-         os.write(tun,packet)
+         try:
+            packet = packet.decode('utf-8')
+            packet = json.loads(packet)
+            if(packet['route'] == 'chat'):
+               print("Msg from Server: ",packet['msg'])
+         except:
+            os.write(tun,packet)
          

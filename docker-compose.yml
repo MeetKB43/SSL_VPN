@@ -17,7 +17,7 @@ services:
             net-10.0.2.0:
                 ipv4_address: 10.0.2.4
         command: bash -c "
-                    tail -f /dev/null 
+                    tail -f /dev/null
                  "
     
     VPN_Client_2:
@@ -90,7 +90,7 @@ services:
         command: bash -c "
                       ip route del default  &&
                       ip route add default via 10.0.2.1 &&
-                      python3 ./volumes/Mysql.py &&
+                      python3 ./volumes/Mysql.py && 
                       tail -f /dev/null
                       
                  "
@@ -100,10 +100,12 @@ services:
         container_name: "mysql"
         image: mysql:8.0
         ports:
-            - 3303:3303
+            - 3306:3306
         networks:
             net-192.168.60.0:
-                ipv4_address: 192.168.60.11
+                ipv4_address: 192.168.60.10
+        volumes:
+            - ./my.cnf:/etc/my.cnf
         environment:
             - MYSQL_ROOT_PASSWORD=secret
             - MYSQL_DATABASE=mysql
